@@ -14,10 +14,12 @@ import {
 import {
   TextInput,
   Button,
-  RadioButton,
   Text,
   Surface,
   ProgressBar,
+  Menu,
+  Divider,
+  RadioButton,
 } from "react-native-paper";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -40,6 +42,7 @@ export default function AssetFormScreen() {
   const [unitCost, setUnitCost] = useState("");
   const [supplierName, setSupplierName] = useState("");
   const [fundingSource, setFundingSource] = useState("Gov. Lib");
+  const [fundingMenuVisible, setFundingMenuVisible] = useState(false);
   const [physicalLocation, setPhysicalLocation] = useState("");
   const [depreciation, setDepreciation] = useState(0);
   const [condition, setCondition] = useState("Functional");
@@ -59,14 +62,12 @@ export default function AssetFormScreen() {
     progressRed: "#F44336",
   };
 
-  // Fetch all existing departments for suggestions
   useEffect(() => {
     const fetchDepartments = async () => {
       const { data } = await supabase
         .from("assets")
         .select("department")
         .neq("department", null);
-
       if (data) {
         const uniqueDepartments = Array.from(
           new Set(data.map((item: any) => item.department))
@@ -77,14 +78,12 @@ export default function AssetFormScreen() {
     fetchDepartments();
   }, []);
 
-  // Filtered suggestions based on user input
   const filteredDepartments = allDepartments.filter(
     (d) =>
       d.toLowerCase().includes(department.toLowerCase()) &&
       department.length > 0
   );
 
-  // Auto-calculate depreciation based on purchase date (max 3 years)
   useEffect(() => {
     if (!purchaseDate) return;
     const now = new Date();
@@ -124,7 +123,6 @@ export default function AssetFormScreen() {
       .getPublicUrl(fileName);
 
     if (!data?.publicUrl) throw new Error("Failed to get public URL");
-
     return data.publicUrl;
   };
 
@@ -178,27 +176,29 @@ export default function AssetFormScreen() {
       if (error) throw error;
 
       Alert.alert("Success", "Asset recorded successfully!");
-
-      // Reset form
-      setDepartment("");
-      setStaffName("");
-      setCode("");
-      setPurchaseDate(null);
-      setDescription("");
-      setQty("");
-      setUnitCost("");
-      setSupplierName("");
-      setPhysicalLocation("");
-      setDepreciation(0);
-      setCondition("Functional");
-      setNeedRepair(false);
-      setImages([]);
-      setFundingSource("Gov. Lib");
+      resetForm();
     } catch (err: any) {
       Alert.alert("Error", err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const resetForm = () => {
+    setDepartment("");
+    setStaffName("");
+    setCode("");
+    setPurchaseDate(null);
+    setDescription("");
+    setQty("");
+    setUnitCost("");
+    setSupplierName("");
+    setPhysicalLocation("");
+    setDepreciation(0);
+    setCondition("Functional");
+    setNeedRepair(false);
+    setImages([]);
+    setFundingSource("Gov. Lib");
   };
 
   const getDepreciationColor = () => {
@@ -225,7 +225,7 @@ export default function AssetFormScreen() {
             Record New Asset
           </Text>
 
-          {/* Department input with dynamic suggestions */}
+          {/* Department */}
           <TextInput
             label="Department *"
             value={department}
@@ -278,19 +278,36 @@ export default function AssetFormScreen() {
             mode="outlined"
           />
 
-          {/* Funding Source */}
-          <TextInput
-            label="Funding Source"
-            value={fundingSource}
-            style={[
-              styles.input,
-              { backgroundColor: themeColors.inputBackground },
-            ]}
-            mode="outlined"
-            onFocus={() =>
-              Alert.alert("Funding Source", "Choose Gov. Lib or Donated")
+          {/* Funding Source Dropdown */}
+          <Menu
+            visible={fundingMenuVisible}
+            onDismiss={() => setFundingMenuVisible(false)}
+            anchor={
+              <Button
+                mode="outlined"
+                onPress={() => setFundingMenuVisible(true)}
+                style={styles.input}
+              >
+                Funding Source: {fundingSource}
+              </Button>
             }
-          />
+          >
+            <Menu.Item
+              onPress={() => {
+                setFundingSource("Gov. Lib");
+                setFundingMenuVisible(false);
+              }}
+              title="Gov. Lib"
+            />
+            <Divider />
+            <Menu.Item
+              onPress={() => {
+                setFundingSource("Donated");
+                setFundingMenuVisible(false);
+              }}
+              title="Donated"
+            />
+          </Menu>
 
           {/* Purchase Date */}
           <Button
@@ -315,6 +332,7 @@ export default function AssetFormScreen() {
             />
           )}
 
+          {/* Other Inputs */}
           <TextInput
             label="Description"
             value={description}
@@ -368,7 +386,7 @@ export default function AssetFormScreen() {
             mode="outlined"
           />
 
-          {/* Depreciation Bar */}
+          {/* Depreciation */}
           <View style={{ marginVertical: 16 }}>
             <Text style={{ color: themeColors.subtitle, marginBottom: 4 }}>
               Depreciation: {depreciation}%
