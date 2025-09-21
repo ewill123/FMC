@@ -1,69 +1,61 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
-  StyleSheet,
   ScrollView,
-  TouchableOpacity,
+  StyleSheet,
   StatusBar,
   RefreshControl,
   useColorScheme,
+  TouchableOpacity,
+  Dimensions,
+  Image,
+  Alert,
+  Modal,
 } from "react-native";
-import {
-  Text,
-  Card,
-  Avatar,
-  Button,
-  ActivityIndicator,
-} from "react-native-paper";
+import { Text, Card, ActivityIndicator } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { LinearGradient } from "expo-linear-gradient";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "../services/supabaseClient";
+import LottieView from "lottie-react-native";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Dashboard">;
+const screenWidth = Dimensions.get("window").width;
 
 export default function DashboardScreen({ navigation }: Props) {
   const [agentName, setAgentName] = useState("Field Agent");
-  const [officesCount, setOfficesCount] = useState<number | null>(null);
   const [assetsCount, setAssetsCount] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLogoutLoader, setShowLogoutLoader] = useState(false);
 
-  const colorScheme = useColorScheme();
-  const isDarkMode = colorScheme === "dark";
+  const lottieRef = useRef<LottieView>(null);
+  const isDarkMode = useColorScheme() === "dark";
 
-  const fetchAgentData = async () => {
+  const themeColors = {
+    gradient: isDarkMode ? ["#121212", "#1c1c1c"] : ["#4c669f", "#3b5998"],
+    text: isDarkMode ? "#fff" : "#1a1a1a",
+    cardBackground: isDarkMode ? "#1f1f1f" : "#fff",
+    statsNumber: isDarkMode ? "#90caf9" : "#3b5998",
+    statsLabel: isDarkMode ? "#ccc" : "#555",
+    cubeBackground: isDarkMode ? "#2c2c2c" : "#f5f5f5",
+    cubeIcon: isDarkMode ? "#90caf9" : "#3b5998",
+    cubeLabel: isDarkMode ? "#90caf9" : "#3b5998",
+    logoutButton: "#e74c3c",
+    footerText: "#888",
+  };
+
+  const fetchAssetsCount = async () => {
     setRefreshing(true);
     try {
-      const { data: userData, error: userError } =
-        await supabase.auth.getUser();
-      if (userError) throw userError;
+      const { data: userData } = await supabase.auth.getUser();
+      setAgentName(userData?.user?.email || "Field Agent");
 
-      const agentId = userData?.user?.id;
-      const agentEmail = userData?.user?.email || "Field Agent";
-      setAgentName(agentEmail);
-
-      if (!agentId) {
-        setOfficesCount(0);
-        setAssetsCount(0);
-        setRefreshing(false);
-        return;
-      }
-
-      const { data: officesData, error: officesError } = await supabase
-        .from("offices")
-        .select("*");
-      if (officesError) throw officesError;
-      setOfficesCount(officesData?.length || 0);
-
-      const { data: assetsData, error: assetsError } = await supabase
-        .from("assets")
-        .select("*")
-        .eq("created_by", agentId);
-      if (assetsError) throw assetsError;
-      setAssetsCount(assetsData?.length || 0);
-    } catch (error: any) {
-      console.log("Fetch error:", error.message);
-      setOfficesCount(0);
+      const { data: assets, error } = await supabase.from("assets").select("*");
+      if (error) throw error;
+      setAssetsCount(assets?.length || 0);
+    } catch (err: any) {
+      console.log("Dashboard fetch error:", err.message);
       setAssetsCount(0);
     } finally {
       setRefreshing(false);
@@ -71,213 +63,261 @@ export default function DashboardScreen({ navigation }: Props) {
   };
 
   useEffect(() => {
-    fetchAgentData();
+    fetchAssetsCount();
+    const interval = setInterval(fetchAssetsCount, 10000);
+    return () => clearInterval(interval);
   }, []);
 
-  const loading = officesCount === null || assetsCount === null;
+  const loading = assetsCount === null;
 
-  const themeColors = {
-    backgroundGradient: isDarkMode
-      ? ["#1c1c1c", "#121212", "#000"]
-      : ["#4c669f", "#3b5998", "#192f6a"],
-    text: "#fff",
-    cardBackground: isDarkMode ? "#1f1f1f" : "#fff",
-    cardText: isDarkMode ? "#fff" : "#333",
-    avatarBackground: "#3b5998",
-    statsNumber: isDarkMode ? "#90caf9" : "#3b5998",
-    statsLabel: isDarkMode ? "#ccc" : "#555",
-    logoutButton: "#e74c3c",
+  const cubeButtons = [
+    {
+      label: "Record Asset",
+      icon: "plus-box",
+      action: () => navigation.navigate("AssetForm", { office_id: "" }),
+    },
+    {
+      label: "View Assets",
+      icon: "cube-outline",
+      action: () => navigation.navigate("AssetsList"),
+    },
+  ];
+
+  const handleLogout = async () => {
+    setShowLogoutLoader(true);
+    try {
+      await supabase.auth.signOut();
+
+      // Play Lottie animation then navigate
+      lottieRef.current?.play();
+      setTimeout(() => {
+        setShowLogoutLoader(false);
+        navigation.reset({ index: 0, routes: [{ name: "Login" }] });
+      }, 2000); // adjust duration based on your Lottie file
+    } catch (err: any) {
+      setShowLogoutLoader(false);
+      Alert.alert("Logout Error", err.message);
+    }
   };
 
   return (
     <LinearGradient
-      colors={themeColors.backgroundGradient as [string, string, string]}
+      colors={themeColors.gradient as [string, string]}
       style={styles.gradient}
     >
-      <StatusBar barStyle={isDarkMode ? "light-content" : "light-content"} />
+      <StatusBar
+        barStyle={isDarkMode ? "light-content" : "dark-content"}
+        backgroundColor="transparent"
+        translucent
+      />
+
       <ScrollView
         contentContainerStyle={styles.container}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={fetchAgentData} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={fetchAssetsCount}
+          />
         }
       >
-        <Text style={[styles.title, { color: themeColors.text }]}>
-          Welcome, {agentName}
+        {/* NEC Logo */}
+        <Image
+          source={require("../assets/logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+
+        {/* Greeting */}
+        <Text style={[styles.greeting, { color: themeColors.text }]}>
+          Welcome, {agentName.split("@")[0]}
+        </Text>
+        <Text style={[styles.emailText, { color: themeColors.text }]}>
+          {agentName}
         </Text>
 
-        {/* Stats */}
-        <View style={styles.statsContainer}>
-          <Card
-            style={[
-              styles.statsCard,
-              { backgroundColor: themeColors.cardBackground },
-            ]}
-          >
-            <Card.Content style={styles.statsContent}>
-              {loading ? (
-                <ActivityIndicator animating color={themeColors.statsNumber} />
-              ) : (
-                <>
-                  <Text
-                    style={[
-                      styles.statsNumber,
-                      { color: themeColors.statsNumber },
-                    ]}
-                  >
-                    {officesCount}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.statsLabel,
-                      { color: themeColors.statsLabel },
-                    ]}
-                  >
-                    Total Offices
-                  </Text>
-                </>
-              )}
-            </Card.Content>
-          </Card>
-
-          <Card
-            style={[
-              styles.statsCard,
-              { backgroundColor: themeColors.cardBackground },
-            ]}
-          >
-            <Card.Content style={styles.statsContent}>
-              {loading ? (
-                <ActivityIndicator animating color={themeColors.statsNumber} />
-              ) : (
-                <>
-                  <Text
-                    style={[
-                      styles.statsNumber,
-                      { color: themeColors.statsNumber },
-                    ]}
-                  >
-                    {assetsCount}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.statsLabel,
-                      { color: themeColors.statsLabel },
-                    ]}
-                  >
-                    Assets Recorded
-                  </Text>
-                </>
-              )}
-            </Card.Content>
-          </Card>
-        </View>
-
-        {/* Quick Actions */}
-        {[
-          {
-            text: "View Offices",
-            icon: "office-building",
-            action: () => navigation.navigate("OfficeList"),
-          },
-          {
-            text: "Record New Asset",
-            icon: "plus-box-outline",
-            action: () => navigation.navigate("AssetForm", { office_id: "" }),
-          },
-          {
-            text: "Submit/View Reports",
-            icon: "file-document-outline",
-            action: () => console.log("Reports pressed"),
-          },
-          {
-            text: "Notifications & Alerts",
-            icon: "bell-outline",
-            action: () => console.log("Notifications pressed"),
-          },
-        ].map((item, idx) => (
-          <TouchableOpacity key={idx} onPress={item.action}>
-            <Card
-              style={[
-                styles.card,
-                { backgroundColor: themeColors.cardBackground },
-              ]}
-            >
-              <Card.Content style={styles.cardContent}>
-                <Avatar.Icon
-                  size={40}
-                  icon={item.icon as any}
+        {/* Total Assets Card */}
+        <Card
+          style={[
+            styles.assetsCard,
+            { backgroundColor: themeColors.cardBackground },
+          ]}
+          elevation={5}
+        >
+          <Card.Content style={styles.assetsContent}>
+            {loading ? (
+              <ActivityIndicator
+                animating
+                color={themeColors.statsNumber}
+                size={60}
+              />
+            ) : (
+              <>
+                <Text
                   style={[
-                    styles.avatar,
-                    { backgroundColor: themeColors.avatarBackground },
+                    styles.assetsNumber,
+                    { color: themeColors.statsNumber },
                   ]}
+                >
+                  {assetsCount}
+                </Text>
+                <Text
+                  style={[
+                    styles.assetsLabel,
+                    { color: themeColors.statsLabel },
+                  ]}
+                >
+                  Total Assets
+                </Text>
+              </>
+            )}
+          </Card.Content>
+        </Card>
+
+        {/* Cube Buttons */}
+        <View style={styles.cubeContainer}>
+          {cubeButtons.map((cube, idx) => (
+            <TouchableOpacity
+              key={idx}
+              onPress={cube.action}
+              activeOpacity={0.8}
+            >
+              <View
+                style={[
+                  styles.cube,
+                  {
+                    backgroundColor: themeColors.cubeBackground,
+                    width: (screenWidth - 64) / 2,
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name={cube.icon as any}
+                  size={50}
+                  color={themeColors.cubeIcon}
                 />
                 <Text
-                  style={[styles.cardText, { color: themeColors.cardText }]}
+                  style={[styles.cubeLabel, { color: themeColors.cubeLabel }]}
                 >
-                  {item.text}
+                  {cube.label}
                 </Text>
-              </Card.Content>
-            </Card>
-          </TouchableOpacity>
-        ))}
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-        <Button
-          mode="contained"
-          style={[
-            styles.logoutButton,
-            { backgroundColor: themeColors.logoutButton },
-          ]}
-          onPress={async () => {
-            await supabase.auth.signOut();
-            navigation.replace("Login");
-          }}
-        >
-          Logout
-        </Button>
+        {/* Logout - full card touchable */}
+        <TouchableOpacity activeOpacity={0.8} onPress={handleLogout}>
+          <Card
+            style={[
+              styles.logoutCard,
+              { backgroundColor: themeColors.logoutButton },
+            ]}
+            elevation={5}
+          >
+            <Card.Content>
+              <Text style={styles.logoutText}>Logout</Text>
+            </Card.Content>
+          </Card>
+        </TouchableOpacity>
+
+        {/* Footer */}
+        <Text style={[styles.footer, { color: themeColors.footerText }]}>
+          Created by Emmanuel Cheeseman | FMC Department | NEC
+        </Text>
       </ScrollView>
+
+      {/* Logout Lottie Animation */}
+      <Modal visible={showLogoutLoader} transparent animationType="fade">
+        <View style={styles.loaderContainer}>
+          <LottieView
+            ref={lottieRef}
+            source={require("../Loading.json")}
+            autoPlay
+            loop={false}
+            style={styles.lottie}
+          />
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   gradient: { flex: 1 },
-  container: { flexGrow: 1, padding: 16, justifyContent: "flex-start" },
-  title: {
-    fontSize: 26,
+  container: { flexGrow: 1, padding: 24, justifyContent: "flex-start" },
+  logo: { width: 120, height: 60, alignSelf: "center", marginVertical: 12 },
+  greeting: {
+    fontSize: 28,
     fontWeight: "700",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  emailText: {
+    fontSize: 16,
+    fontWeight: "400",
     marginBottom: 24,
     textAlign: "center",
   },
-
-  // Stats Section
-  statsContainer: {
+  assetsCard: {
+    borderRadius: 18,
+    paddingVertical: 36,
+    marginBottom: 32,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  assetsContent: { alignItems: "center" },
+  assetsNumber: { fontSize: 60, fontWeight: "800" },
+  assetsLabel: { fontSize: 22, marginTop: 10 },
+  cubeContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 24,
+    marginBottom: 32,
   },
-  statsCard: {
-    flex: 1,
+  cube: {
+    height: 160,
+    borderRadius: 18,
     marginHorizontal: 4,
-    borderRadius: 16,
-    elevation: 6,
+    justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 16,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
   },
-  statsContent: { alignItems: "center" },
-  statsNumber: { fontSize: 22, fontWeight: "700", marginBottom: 4 },
-  statsLabel: { fontSize: 14, textAlign: "center" },
-
-  // Quick Action Cards
-  card: { marginBottom: 16, borderRadius: 20, elevation: 6 },
-  cardContent: {
-    flexDirection: "row",
+  cubeLabel: {
+    marginTop: 14,
+    fontSize: 17,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  logoutCard: {
+    borderRadius: 18,
+    marginTop: 36,
+    paddingVertical: 18,
     alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 12,
   },
-  avatar: { marginRight: 16 },
-  cardText: { fontSize: 18, fontWeight: "500" },
-
-  // Logout button
-  logoutButton: { marginTop: 16, borderRadius: 10, paddingVertical: 6 },
+  logoutText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  footer: {
+    fontSize: 14,
+    fontWeight: "400",
+    textAlign: "center",
+    marginTop: 40,
+    marginBottom: 20,
+  },
+  loaderContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  lottie: { width: 200, height: 200 },
 });

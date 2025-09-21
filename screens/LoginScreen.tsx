@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   StyleSheet,
@@ -7,34 +7,60 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
+  Dimensions,
+  Modal,
 } from "react-native";
-import { TextInput, Button, Text, HelperText } from "react-native-paper";
+import {
+  TextInput,
+  Button,
+  Text,
+  HelperText,
+  useTheme,
+} from "react-native-paper";
 import { supabase } from "../services/supabaseClient";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { LinearGradient } from "expo-linear-gradient";
+import LottieView from "lottie-react-native";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
+const screenHeight = Dimensions.get("window").height;
 
 export default function LoginScreen({ navigation }: Props) {
+  const theme = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showLoader, setShowLoader] = useState(false);
+
+  const lottieRef = useRef<LottieView>(null);
 
   const handleLogin = async () => {
     if (!email || !password) {
       return Alert.alert("Validation Error", "Email and password are required");
     }
+
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    setLoading(false);
-    if (error) {
-      Alert.alert("Login Error", error.message);
-    } else {
-      navigation.replace("Dashboard");
+    setShowLoader(true);
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+
+      // Wait until Lottie finishes before navigating
+      lottieRef.current?.play();
+      setTimeout(() => {
+        setShowLoader(false);
+        navigation.replace("Dashboard");
+      }, 2000); // adjust based on animation duration
+    } catch (err: any) {
+      setShowLoader(false);
+      Alert.alert("Login Error", err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -54,14 +80,11 @@ export default function LoginScreen({ navigation }: Props) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.card}>
-            <View style={styles.logoContainer}>
-              <Image
-                source={require("../assets/logo.png")}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            </View>
-
+            <Image
+              source={require("../assets/logo.png")}
+              style={styles.logo}
+              resizeMode="contain"
+            />
             <Text style={styles.title}>FMC Asset Management</Text>
 
             <TextInput
@@ -74,9 +97,12 @@ export default function LoginScreen({ navigation }: Props) {
               style={styles.input}
               left={<TextInput.Icon icon="email-outline" />}
               error={!!emailError}
+              activeOutlineColor={theme.colors.primary}
             />
             {emailError && (
-              <HelperText type="error">Enter a valid email address</HelperText>
+              <HelperText type="error" visible={true}>
+                Enter a valid email address
+              </HelperText>
             )}
 
             <TextInput
@@ -87,6 +113,7 @@ export default function LoginScreen({ navigation }: Props) {
               secureTextEntry
               style={styles.input}
               left={<TextInput.Icon icon="lock-outline" />}
+              activeOutlineColor={theme.colors.primary}
             />
 
             <Button
@@ -94,13 +121,27 @@ export default function LoginScreen({ navigation }: Props) {
               onPress={handleLogin}
               loading={loading}
               style={styles.button}
-              contentStyle={{ paddingVertical: 8 }}
+              contentStyle={{ paddingVertical: 10 }}
+              uppercase={false}
             >
               Login
             </Button>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Lottie Modal */}
+      <Modal visible={showLoader} transparent animationType="fade">
+        <View style={styles.loaderContainer}>
+          <LottieView
+            ref={lottieRef}
+            source={require("../Loading.json")}
+            autoPlay
+            loop={false}
+            style={styles.lottie}
+          />
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -117,25 +158,41 @@ const styles = StyleSheet.create({
   card: {
     width: "100%",
     maxWidth: 400,
-    backgroundColor: "white",
-    borderRadius: 20,
-    padding: 24,
-    elevation: 8,
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 28,
+    elevation: 10,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
     alignItems: "center",
   },
-  logoContainer: { alignItems: "center", marginBottom: 24 },
-  logo: { width: 100, height: 100 },
+  logo: { width: 120, height: 120, marginBottom: 20 },
   title: {
-    fontSize: 24,
-    fontWeight: "bold",
+    fontSize: 26,
+    fontWeight: "700",
+    color: "#1a1a1a",
     textAlign: "center",
-    marginBottom: 24,
-    color: "#333",
+    marginBottom: 28,
   },
-  input: { marginBottom: 16, backgroundColor: "white", width: "100%" },
-  button: { borderRadius: 12, marginTop: 8, width: "100%" },
+  input: {
+    marginBottom: 16,
+    backgroundColor: "#f7f7f7",
+    width: "100%",
+    borderRadius: 12,
+  },
+  button: {
+    borderRadius: 16,
+    marginTop: 12,
+    width: "100%",
+    backgroundColor: "#6200ee",
+  },
+  loaderContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  lottie: { width: 200, height: 200 },
 });
